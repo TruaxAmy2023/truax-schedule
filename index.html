@@ -14081,14 +14081,13 @@
   // added live since. Read-only viewers can use this too; it never writes.
 
   function wireAskToolbarButton(){
+    // Temporarily disabled: the AI question feature needs an Anthropic API
+    // key configured on the backend before it can answer anything. Hiding
+    // the button instead of wiring it up avoids showing a broken feature.
     var btn = document.getElementById('ask-question-btn');
-    var modal = document.getElementById('ask-modal');
-    if (btn && modal){
-      btn.addEventListener('click', function(){
-        modal.hidden = false;
-        var input = document.getElementById('ask-input');
-        if (input) input.focus();
-      });
+    if (btn){
+      btn.hidden = true;
+      return;
     }
   }
 
