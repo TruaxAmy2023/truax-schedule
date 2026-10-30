@@ -607,6 +607,12 @@
   .merge-room-btn:hover{background:var(--accent); color:#fff;}
   .merge-room-btn:disabled{opacity:0.5; cursor:default;}
 
+  .rename-room-btn{
+    font-family:'Inter',sans-serif; font-size:11px; font-weight:600; color:var(--ink-faint);
+    background:none; border:1px solid var(--line); border-radius:100px; padding:4px 10px; cursor:pointer;
+  }
+  .rename-room-btn:hover{color:var(--accent-ink); border-color:var(--accent);}
+
   .merge-source-name{font-family:'Newsreader',serif; font-size:16px; color:var(--ink); font-weight:500; padding:9px 0 2px;}
 
   /* ---------- Modals (add room / add item manually) ---------- */
@@ -13793,7 +13799,7 @@
   function tocRowHtml(anchor, name, slug){
     slug = slug || '';
     return '<button type="button" class="toc-row" data-room="' + anchor + '" data-slug="' + slug + '" data-phase="">' +
-      '<span class="toc-name"><span class="toc-phase-dot" data-slug="' + slug + '" data-anchor="' + anchor + '"></span>' + escapeHtml(name) + '</span>' +
+      '<span class="toc-name"><span class="toc-phase-dot" data-slug="' + slug + '" data-anchor="' + anchor + '"></span><span class="toc-name-text">' + escapeHtml(name) + '</span></span>' +
       '<span class="toc-count" id="toc-count-' + anchor + '">0 items</span>' +
       '<span class="toc-sub" id="toc-sub-' + anchor + '">—</span>' +
     '</button>';
@@ -13840,6 +13846,7 @@
           '<div class="room-meta">' +
             '<span id="room-count-' + anchor + '">0 items</span>' +
             '<span class="room-sub" id="room-sub-' + anchor + '">TBD</span>' +
+            '<button type="button" class="rename-room-btn" data-rename-room="' + anchor + '" data-slug="' + slug + '">Rename</button>' +
             '<button type="button" class="merge-room-btn" data-merge-room="' + anchor + '" data-slug="' + slug + '">Merge into…</button>' +
             '<button type="button" class="remove-room-btn" data-remove-room="' + anchor + '" data-slug="' + slug + '" hidden>Remove room</button>' +
           '</div>' +
@@ -14042,6 +14049,49 @@
       var slug = btn.getAttribute('data-slug');
       if (!window.confirm('Remove this room? This cannot be undone.')) return;
       deleteManualRoom(anchor, slug);
+    });
+  }
+
+  // Renaming only touches the display name, never the anchor -- the anchor
+  // is the durable key other docs (roomItems, specSheets, deliveryStatus,
+  // notes, the manualRooms doc id itself) are filed under, so changing it
+  // would orphan everything already saved for this room.
+  function renameManualRoom(anchor, slug, newName){
+    var section = document.getElementById(anchor);
+    if (!section) return;
+    var h2 = section.querySelector('.room-header h2');
+    if (h2) h2.textContent = newName;
+    var tocNameEl = document.querySelector('.toc-row[data-slug="' + slug + '"][data-room="' + anchor + '"] .toc-name-text');
+    if (tocNameEl) tocNameEl.textContent = newName;
+    var dropTile = section.querySelector('.room-drop-tile:not(.manual-add-tile)');
+    if (dropTile){
+      dropTile.setAttribute('data-room-name', newName);
+      dropTile.setAttribute('aria-label', 'Drop a receipt or purchase order for ' + newName);
+      var subEl = dropTile.querySelector('.room-drop-sub');
+      if (subEl) subEl.textContent = 'Auto-files to ' + newName;
+    }
+    var manualTile = section.querySelector('.manual-add-tile');
+    if (manualTile){
+      manualTile.setAttribute('data-room-name', newName);
+      manualTile.setAttribute('aria-label', 'Add an item manually to ' + newName);
+    }
+    if (db) db.collection('manualRooms').doc(manualRoomDocId(anchor)).update({name: newName}).catch(function(){});
+  }
+
+  function wireRenameRoomButtons(){
+    document.addEventListener('click', function(e){
+      var btn = e.target.closest ? e.target.closest('[data-rename-room]') : null;
+      if (!btn || !canWrite) return;
+      var anchor = btn.getAttribute('data-rename-room');
+      var slug = btn.getAttribute('data-slug');
+      var section = document.getElementById(anchor);
+      var h2 = section ? section.querySelector('.room-header h2') : null;
+      var current = h2 ? h2.textContent : '';
+      var next = window.prompt('Rename this room:', current);
+      if (next === null) return;
+      next = next.trim();
+      if (!next || next === current) return;
+      renameManualRoom(anchor, slug, next);
     });
   }
 
@@ -14444,6 +14494,7 @@
     wireAddItemForm();
     wireAddRoomForm();
     wireRemoveRoomButtons();
+    wireRenameRoomButtons();
     wireRoomItemRemove();
     wireRoomItemEdit();
     wirePrintGoButtonOnce();
