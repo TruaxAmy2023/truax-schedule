@@ -1,3 +1,4 @@
+
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Martin Residence — Truax Construction</title>
 <meta name="description" content="Fixture and finish schedules by trade, organized by room with product photography, specifications and pricing.">
@@ -11806,6 +11807,7 @@
   var roomItemsCache = {};
   var pendingRoomItems = {}; // anchor -> [{id, slug, data}], for items whose manual room hasn't synced in yet
   var pendingRoomMoves = {}; // anchor -> [rowId, ...], for merged-in baked items whose target manual room hasn't synced in yet
+  var roomRenameOverrides = {}; // anchor -> overridden display name, from the roomRenames collection (works for baked AND manual rooms)
   var pdfjsReady = null;
 
   var TRADE_LABELS = ["Appliances", "Audio & Video", "Cabinetry", "Concrete", "Countertops", "Doors & Windows", "Electrical", "Exterior Trim", "Flooring & Tile", "Glass & Mirrors", "Hardware", "Masonry", "Paint & Finishes", "Plumbing", "Pools & Fountains", "Roofing & Gutters", "Specialty Items", "Stone Slabs"];
@@ -13846,7 +13848,6 @@
           '<div class="room-meta">' +
             '<span id="room-count-' + anchor + '">0 items</span>' +
             '<span class="room-sub" id="room-sub-' + anchor + '">TBD</span>' +
-            '<button type="button" class="rename-room-btn" data-rename-room="' + anchor + '" data-slug="' + slug + '">Rename</button>' +
             '<button type="button" class="merge-room-btn" data-merge-room="' + anchor + '" data-slug="' + slug + '">Merge into…</button>' +
             '<button type="button" class="remove-room-btn" data-remove-room="' + anchor + '" data-slug="' + slug + '" hidden>Remove room</button>' +
           '</div>' +
@@ -13941,6 +13942,8 @@
     updateRoomHeaderUI(data.anchor);
     setWriteState(section);
     recomputeTradeUI(data.slug);
+    ensureRenameButton(section);
+    if (roomRenameOverrides[data.anchor]) applyRoomRename(data.anchor, data.slug, roomRenameOverrides[data.anchor]);
     scheduleReindex();
   }
 
@@ -14052,17 +14055,61 @@
     });
   }
 
-  // Renaming only touches the display name, never the anchor -- the anchor
-  // is the durable key other docs (roomItems, specSheets, deliveryStatus,
-  // notes, the manualRooms doc id itself) are filed under, so changing it
-  // would orphan everything already saved for this room.
-  function renameManualRoom(anchor, slug, newName){
+  // ---------- Room renaming (works for BAKED rooms as well as manual ones)
+  // ----------
+  // A room's display name shows up in four places: the room's own <h2>, its
+  // row in the sidebar table of contents, and the data-room-name attribute
+  // (plus derived label text) on its two drop tiles -- the attribute is
+  // also what the receipt-drop/manual-add flows read live to stamp a name
+  // onto a new item and to prompt the AI extractor, so it has to be kept in
+  // sync, not just the visible text. None of that lives in the database for
+  // a baked room (its original name is plain text in the static HTML), so
+  // a rename is stored as an override in its own 'roomRenames' collection,
+  // keyed the same scoped way as manualRoomDocId, and reapplied over
+  // whatever base name is on the page every time the project (re)mounts.
+  // Renaming never touches the anchor itself -- the anchor is the durable
+  // key every other doc for this room (roomItems, specSheets,
+  // deliveryStatus, notes, manualRooms) is filed under.
+
+  function slugForRoomSection(section){
+    var tile = section.querySelector('[data-slug]');
+    return tile ? tile.getAttribute('data-slug') : '';
+  }
+
+  function ensureTocNameText(tocNameEl){
+    if (!tocNameEl) return null;
+    var existing = tocNameEl.querySelector('.toc-name-text');
+    if (existing) return existing;
+    // Baked TOC rows have the room name as a bare trailing text node after
+    // the phase dot (manual rooms already get the wrapper from
+    // tocRowHtml) -- wrap it in a span so a rename can target just the
+    // name without disturbing the dot.
+    var textNode = null;
+    for (var i=0;i<tocNameEl.childNodes.length;i++){
+      var n = tocNameEl.childNodes[i];
+      if (n.nodeType === 3 && n.textContent && n.textContent.trim()) textNode = n;
+    }
+    var span = document.createElement('span');
+    span.className = 'toc-name-text';
+    if (textNode){
+      span.textContent = textNode.textContent;
+      tocNameEl.replaceChild(span, textNode);
+    } else {
+      tocNameEl.appendChild(span);
+    }
+    return span;
+  }
+
+  function applyRoomRename(anchor, slug, newName){
     var section = document.getElementById(anchor);
     if (!section) return;
     var h2 = section.querySelector('.room-header h2');
     if (h2) h2.textContent = newName;
-    var tocNameEl = document.querySelector('.toc-row[data-slug="' + slug + '"][data-room="' + anchor + '"] .toc-name-text');
-    if (tocNameEl) tocNameEl.textContent = newName;
+    var tocRow = document.querySelector('.toc-row[data-slug="' + slug + '"][data-room="' + anchor + '"]');
+    if (tocRow){
+      var textSpan = ensureTocNameText(tocRow.querySelector('.toc-name'));
+      if (textSpan) textSpan.textContent = newName;
+    }
     var dropTile = section.querySelector('.room-drop-tile:not(.manual-add-tile)');
     if (dropTile){
       dropTile.setAttribute('data-room-name', newName);
@@ -14075,13 +14122,41 @@
       manualTile.setAttribute('data-room-name', newName);
       manualTile.setAttribute('aria-label', 'Add an item manually to ' + newName);
     }
-    if (db) db.collection('manualRooms').doc(manualRoomDocId(anchor)).update({name: newName}).catch(function(){});
+    scheduleReindex();
+  }
+
+  // Safe to call whether or not the room's section has mounted in the DOM
+  // yet -- caches the override either way, and applies it immediately when
+  // it has. Covers the race where the roomRenames snapshot for a manual
+  // room arrives before (or after) the manualRooms snapshot that actually
+  // inserts that room's section.
+  function applyRoomRenameIfMounted(anchor, slug, newName){
+    roomRenameOverrides[anchor] = newName;
+    if (document.getElementById(anchor)) applyRoomRename(anchor, slug, newName);
+  }
+
+  function ensureRenameButton(section){
+    var meta = section.querySelector('.room-header .room-meta');
+    if (!meta || meta.querySelector('.rename-room-btn')) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'rename-room-btn';
+    btn.setAttribute('data-rename-room', section.id);
+    btn.setAttribute('data-slug', slugForRoomSection(section));
+    btn.textContent = 'Rename';
+    var mergeBtn = meta.querySelector('.merge-room-btn');
+    meta.insertBefore(btn, mergeBtn || null);
+  }
+
+  function injectRenameButtons(){
+    var sections = document.querySelectorAll('#project-root .room-section');
+    for (var i=0;i<sections.length;i++) ensureRenameButton(sections[i]);
   }
 
   function wireRenameRoomButtons(){
     document.addEventListener('click', function(e){
       var btn = e.target.closest ? e.target.closest('[data-rename-room]') : null;
-      if (!btn || !canWrite) return;
+      if (!btn || !canWrite || !db) return;
       var anchor = btn.getAttribute('data-rename-room');
       var slug = btn.getAttribute('data-slug');
       var section = document.getElementById(anchor);
@@ -14091,7 +14166,10 @@
       if (next === null) return;
       next = next.trim();
       if (!next || next === current) return;
-      renameManualRoom(anchor, slug, next);
+      applyRoomRenameIfMounted(anchor, slug, next);
+      db.collection('roomRenames').doc(manualRoomDocId(anchor)).set({
+        name: next, anchor: anchor, slug: slug, projectId: currentProjectId, updatedAt: Date.now()
+      }).catch(function(){});
     });
   }
 
@@ -14481,6 +14559,7 @@
     wireRoomDropTiles();
     wireAddItemTiles();
     wireAddRoomButtons();
+    injectRenameButtons();
     wirePrintToolbarButton();
     wireAskToolbarButton();
   }
@@ -14525,6 +14604,16 @@
         specsByRow[row] = Array.isArray(data.files) ? data.files : [];
         specFallbackByRow[row] = data.dropboxUrl ? {url: data.dropboxUrl, note: data.note || ''} : null;
         renderRow(row);
+      });
+    }, function(){ /* ignore live-sync errors, page still works read-only */ }));
+
+    activeListeners.push(db.collection('roomRenames').onSnapshot(function(snap){
+      snap.docs.forEach(function(doc){
+        var data = doc.data() || {};
+        var docProjectId = data.projectId || 'martin-residence';
+        if (docProjectId !== currentProjectId) return;
+        if (!data.anchor || !data.name) return;
+        applyRoomRenameIfMounted(data.anchor, data.slug || '', data.name);
       });
     }, function(){ /* ignore live-sync errors, page still works read-only */ }));
 
@@ -14616,6 +14705,7 @@
     roomItemsCache = {};
     pendingRoomItems = {};
     pendingRoomMoves = {};
+    roomRenameOverrides = {};
     plansCache = {};
     minutesCache = {};
     attnFlagsCache = {};
