@@ -147,6 +147,40 @@
     background:none; border:1px solid var(--line); border-radius:100px; padding:4px 10px; cursor:pointer;
   }
   .inbox-remove:hover{color:var(--pending); border-color:var(--pending);}
+  .inbox-edit{
+    font-family:'Inter',sans-serif; font-size:11px; font-weight:600; color:var(--ink-faint);
+    background:none; border:1px solid var(--line); border-radius:100px; padding:4px 10px; cursor:pointer;
+  }
+  .inbox-edit:hover{color:var(--accent-ink); border-color:var(--accent);}
+
+  /* ---------- Inline item-edit form ---------- */
+  .item-card.item-card--editing .card-eyebrow,
+  .item-card.item-card--editing .card-desc,
+  .item-card.item-card--editing .spec-grid,
+  .item-card.item-card--editing .price-block{display:none;}
+  .item-edit-form{display:flex; flex-direction:column; gap:12px; padding-top:4px;}
+  .edit-row{display:flex; flex-direction:column; gap:4px;}
+  .edit-row label{
+    font-size:10.5px; letter-spacing:0.06em; text-transform:uppercase; font-weight:600; color:var(--ink-faint);
+  }
+  .edit-row input, .edit-row textarea{
+    width:100%; box-sizing:border-box; padding:8px 10px; border-radius:8px;
+    border:1px solid var(--line); background:var(--surface-2); color:var(--ink);
+    font-family:'Inter',sans-serif; font-size:13px; line-height:1.4;
+  }
+  .edit-row textarea{resize:vertical; min-height:52px;}
+  .edit-row input:focus, .edit-row textarea:focus{outline:none; border-color:var(--accent);}
+  .edit-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  @media (max-width:520px){ .edit-grid{grid-template-columns:1fr;} }
+  .item-edit-actions{display:flex; gap:10px; margin-top:2px;}
+  .item-edit-save, .item-edit-cancel{
+    font-family:'Inter',sans-serif; font-size:12.5px; font-weight:600; letter-spacing:0.01em;
+    padding:8px 16px; border-radius:100px; cursor:pointer; border:1px solid var(--line);
+  }
+  .item-edit-save{background:var(--accent); border-color:var(--accent); color:#fff;}
+  .item-edit-save:hover{background:var(--accent-ink); border-color:var(--accent-ink);}
+  .item-edit-cancel{background:none; color:var(--ink-faint);}
+  .item-edit-cancel:hover{color:var(--ink);}
 
   .suggested-trade{
     font-size:12px; color:var(--ink-soft); background:var(--surface-2); border-radius:8px; padding:8px 10px;
@@ -11323,7 +11357,7 @@
       var okType = file.type === 'application/pdf' || file.type.indexOf('image/') === 0;
       if (!okType) return;
       assetsApi.upload(file, {type: file.type || 'application/pdf'}).then(function(res){
-        var entry = {id: res.id, name: file.name, size: res.sizeBytes, type: res.contentType};
+        var entry = {id: res.id, name: file.name, size: res.sizeBytes, type: res.contentType, url: res.url};
         var cur = (specsByRow[row] || []).slice();
         cur.push(entry);
         specsByRow[row] = cur;
@@ -13162,7 +13196,10 @@
       '<article class="item-card" id="roomitemcard-' + id + '">' +
         '<div class="inbox-badge-row">' +
           '<span class="inbox-badge">' + badgeText + '</span>' +
-          '<button type="button" class="inbox-remove" data-room-remove="' + id + '">Remove</button>' +
+          '<span style="display:flex; gap:6px;">' +
+            '<button type="button" class="inbox-edit" data-room-edit="' + id + '">Edit</button>' +
+            '<button type="button" class="inbox-remove" data-room-remove="' + id + '">Remove</button>' +
+          '</span>' +
         '</div>' +
         '<div class="card-media card-media--placeholder" data-row="' + id + '" tabindex="0" role="button" aria-label="View the source document for this item"><div class="ph-wrap">' + INBOX_PLACEHOLDER_SVG + '</div></div>' +
         '<div class="card-body">' +
@@ -13176,6 +13213,23 @@
             trackingSpec +
           '</div>' +
           priceBlock +
+          '<div class="item-edit-form" id="editform-' + id + '" hidden>' +
+            '<div class="edit-row"><label for="editf-brand-' + id + '">Brand</label><input type="text" id="editf-brand-' + id + '"></div>' +
+            '<div class="edit-row"><label for="editf-dealer-' + id + '">Dealer / vendor</label><input type="text" id="editf-dealer-' + id + '"></div>' +
+            '<div class="edit-row"><label for="editf-desc-' + id + '">Description</label><textarea id="editf-desc-' + id + '" rows="3"></textarea></div>' +
+            '<div class="edit-grid">' +
+              '<div class="edit-row"><label for="editf-model-' + id + '">' + modelLabel + '</label><input type="text" id="editf-model-' + id + '"></div>' +
+              (finishLabel ? ('<div class="edit-row"><label for="editf-finish-' + id + '">' + finishLabel + '</label><input type="text" id="editf-finish-' + id + '"></div>') : '') +
+              '<div class="edit-row"><label for="editf-lead-' + id + '">Lead time</label><input type="text" id="editf-lead-' + id + '"></div>' +
+              '<div class="edit-row"><label for="editf-quote-' + id + '">Quote&nbsp;#</label><input type="text" id="editf-quote-' + id + '"></div>' +
+              '<div class="edit-row"><label for="editf-qty-' + id + '">Qty</label><input type="number" min="1" step="1" id="editf-qty-' + id + '"></div>' +
+              '<div class="edit-row"><label for="editf-amount-' + id + '">Price (blank&nbsp;=&nbsp;pending)</label><input type="text" id="editf-amount-' + id + '" placeholder="0.00"></div>' +
+            '</div>' +
+            '<div class="item-edit-actions">' +
+              '<button type="button" class="item-edit-save" data-room-edit-save="' + id + '">Save changes</button>' +
+              '<button type="button" class="item-edit-cancel" data-room-edit-cancel="' + id + '">Cancel</button>' +
+            '</div>' +
+          '</div>' +
           '<div class="status-track">' +
             '<span class="status-label">Status</span>' +
             '<div class="status-options" id="status-' + id + '" data-row="' + id + '">' +
@@ -13355,6 +13409,90 @@
       var specs = specsByRow[id] || [];
       specs.forEach(function(f){ if (assetsApi) assetsApi.delete(f.id).catch(function(){}); });
       db.collection('specSheets').doc('row' + id).delete().catch(function(){});
+    });
+  }
+
+  function openRoomItemEdit(id){
+    var card = document.getElementById('roomitemcard-' + id);
+    var form = document.getElementById('editform-' + id);
+    if (!card || !form) return;
+    var it = roomItemsCache[id] || {};
+    var setVal = function(field, value){
+      var el = document.getElementById('editf-' + field + '-' + id);
+      if (el) el.value = value;
+    };
+    setVal('brand', it.brand || '');
+    setVal('dealer', it.dealer || '');
+    setVal('desc', it.desc || '');
+    setVal('model', it.model || '');
+    setVal('finish', it.finish || '');
+    setVal('lead', it.lead || '');
+    setVal('quote', it.quote || '');
+    setVal('qty', it.qty || 1);
+    setVal('amount', (it.amountNumeric === null || it.amountNumeric === undefined) ? '' : it.amountNumeric);
+    card.classList.add('item-card--editing');
+    form.hidden = false;
+  }
+
+  function closeRoomItemEdit(id){
+    var card = document.getElementById('roomitemcard-' + id);
+    var form = document.getElementById('editform-' + id);
+    if (card) card.classList.remove('item-card--editing');
+    if (form) form.hidden = true;
+  }
+
+  function saveRoomItemEdit(id){
+    var it = roomItemsCache[id];
+    if (!it) return;
+    var getVal = function(field){
+      var el = document.getElementById('editf-' + field + '-' + id);
+      return el ? el.value : '';
+    };
+    var updated = {};
+    for (var k in it){ if (it.hasOwnProperty(k)) updated[k] = it[k]; }
+    updated.brand = getVal('brand').trim();
+    updated.dealer = getVal('dealer').trim() || null;
+    updated.desc = getVal('desc').trim();
+    updated.model = getVal('model').trim();
+    if (document.getElementById('editf-finish-' + id)) updated.finish = getVal('finish').trim();
+    updated.lead = getVal('lead').trim();
+    updated.quote = getVal('quote').trim();
+    var qtyNum = parseInt(getVal('qty'), 10);
+    updated.qty = (isFinite(qtyNum) && qtyNum > 0) ? qtyNum : 1;
+    var amountText = getVal('amount').trim();
+    if (amountText === ''){
+      updated.amountNumeric = null;
+      updated.amountStatus = it.amountStatus || 'Pricing not yet provided';
+    } else {
+      updated.amountNumeric = parseMoneyText(amountText);
+      updated.amountStatus = null;
+    }
+    roomItemsCache[id] = updated;
+    closeRoomItemEdit(id);
+    removeRoomItemCard(updated.slug, updated.anchor, id);
+    insertRoomItemCard(updated.slug, updated.anchor, id, updated);
+    if (db) db.collection('roomItems').doc(id).set(updated).catch(function(){});
+  }
+
+  function wireRoomItemEdit(){
+    document.addEventListener('click', function(e){
+      var openBtn = e.target.closest ? e.target.closest('[data-room-edit]') : null;
+      if (openBtn){
+        if (!canWrite) return;
+        openRoomItemEdit(openBtn.getAttribute('data-room-edit'));
+        return;
+      }
+      var cancelBtn = e.target.closest ? e.target.closest('[data-room-edit-cancel]') : null;
+      if (cancelBtn){
+        closeRoomItemEdit(cancelBtn.getAttribute('data-room-edit-cancel'));
+        return;
+      }
+      var saveBtn = e.target.closest ? e.target.closest('[data-room-edit-save]') : null;
+      if (saveBtn){
+        if (!canWrite || !db) return;
+        saveRoomItemEdit(saveBtn.getAttribute('data-room-edit-save'));
+        return;
+      }
     });
   }
 
@@ -14307,6 +14445,7 @@
     wireAddRoomForm();
     wireRemoveRoomButtons();
     wireRoomItemRemove();
+    wireRoomItemEdit();
     wirePrintGoButtonOnce();
     wireAskModalOnce();
     wireMergeRoomModalOnce();
