@@ -11372,31 +11372,37 @@
       // Product picture for the square: any attached photo wins; otherwise
       // draw page 1 of the attached spec sheet PDF (spec books put the
       // product/finish photo there) and crop it to the picture.
-      var imgFile = null, pdfFile = null;
+      var imgFile = null, pdfs = [];
       files.forEach(function(f){
         var t = f.type || '';
         if (!imgFile && t.indexOf('image/') === 0) imgFile = f;
-        if (t === 'application/pdf'){
-          var looksLikePaperwork = /\b(po|p\.o\.|purchase|invoice|receipt|quote|estimate|order)\b/i.test(f.name || '');
-          if (!pdfFile || (pdfFile.__paperwork && !looksLikePaperwork)){ pdfFile = f; pdfFile.__paperwork = looksLikePaperwork; }
-        }
+        if (t === 'application/pdf') pdfs.push(f);
       });
+      // Spec sheets before purchase orders / quotes; otherwise keep attach order.
+      var paperwork = /\b(po|p\.o\.|purchase|invoice|receipt|quote|estimate|order)\b/i;
+      pdfs.sort(function(a, b){ return (paperwork.test(a.name || '') ? 1 : 0) - (paperwork.test(b.name || '') ? 1 : 0); });
+      var pdfUrls = pdfs.map(function(f){ return f.url || ('/_blob/' + encodeURIComponent(f.id)); });
       if (imgFile){
         var mediaUrl = imgFile.url || ('/_blob/' + encodeURIComponent(imgFile.id));
         if (media.__shownSrc !== mediaUrl){
           media.innerHTML = '<img src="' + mediaUrl + '" alt="" loading="lazy">';
           media.__shownSrc = mediaUrl;
         }
-      } else if (pdfFile){
-        var pdfUrl = pdfFile.url || ('/_blob/' + encodeURIComponent(pdfFile.id));
-        if (media.__shownSrc !== pdfUrl){
-          media.__shownSrc = pdfUrl;
+      } else if (pdfUrls.length){
+        var key = pdfUrls.join('|');
+        if (media.__shownSrc !== key){
+          media.__shownSrc = key;
           media.innerHTML = media.__origHTML;
-          pdfThumbFor(pdfUrl).then(function(dataUrl){
-            if (dataUrl && media.__shownSrc === pdfUrl){
-              media.innerHTML = '<img src="' + dataUrl + '" alt="" loading="lazy">';
-            }
-          });
+          // Try each PDF in turn so one missing or unreadable file doesn't
+          // leave the square blank.
+          (function tryNext(i){
+            if (i >= pdfUrls.length || media.__shownSrc !== key) return;
+            pdfThumbFor(pdfUrls[i]).then(function(dataUrl){
+              if (media.__shownSrc !== key) return;
+              if (dataUrl) media.innerHTML = '<img src="' + dataUrl + '" alt="" loading="lazy">';
+              else tryNext(i + 1);
+            });
+          })(0);
         }
       } else {
         media.innerHTML = media.__origHTML;
